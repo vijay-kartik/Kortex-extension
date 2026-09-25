@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Kortex popup — design QA</title>
+    <style>
+      html,
+      body {
+        width: auto !important;
+        background: #1c1f26 !important;
+      }
+      .gallery {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 32px;
+        padding: 24px;
+        align-items: flex-start;
+      }
+      .gallery h2 {
+        font: 500 13px/1 'Space Grotesk', sans-serif;
+        color: #97a1b8;
+        margin: 0 0 10px;
+      }
+      .popup {
+        width: 360px;
+        background: var(--void);
+        border: 1px solid var(--edge);
+        border-radius: 12px;
+        overflow: hidden;
+        position: relative;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

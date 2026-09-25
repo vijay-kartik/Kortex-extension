@@ -1,0 +1,23 @@
+// Renders the toolbar/store icons (16, 32, 48, 128 PNG) from the app icon artwork:
+// the Android launcher foreground cropped to its visible 18 18 72 72, on a Void rounded square.
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { Resvg } from '@resvg/resvg-js';
+
+const K =
+  'M33 36a8 8 0 1 0 16 0a8 8 0 1 0 -16 0ZM59 36a8 8 0 1 0 16 0a8 8 0 1 0 -16 0ZM33 72a8 8 0 1 0 16 0a8 8 0 1 0 -16 0ZM59 72a8 8 0 1 0 16 0a8 8 0 1 0 -16 0ZM46 72L46 36A5 5 0 0 0 36 36L36 72A5 5 0 0 0 46 72ZM43.85 58.11L69.85 40.11A5 5 0 0 0 64.15 31.89L38.15 49.89A5 5 0 0 0 43.85 58.11ZM38.15 58.11L64.15 76.11A5 5 0 0 0 69.85 67.89L43.85 49.89A5 5 0 0 0 38.15 58.11Z';
+
+const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="18 18 72 72">
+  <rect x="18" y="18" width="72" height="72" rx="18" fill="#0B0E14"/>
+  <path fill="#7C8CFF" d="${K}"/>
+</svg>`;
+
+const out = resolve(dirname(fileURLToPath(import.meta.url)), '../public/icons');
+mkdirSync(out, { recursive: true });
+writeFileSync(resolve(out, 'icon.svg'), svg);
+for (const size of [16, 32, 48, 128]) {
+  const png = new Resvg(svg, { fitTo: { mode: 'width', value: size } }).render().asPng();
+  writeFileSync(resolve(out, `${size}.png`), png);
+}
+console.log('icons written to', out);

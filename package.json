@@ -1,0 +1,29 @@
+{
+  "name": "kortex-browser-extension",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite build --watch --mode development",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "icons": "node scripts/icons.mjs",
+    "preview:ui": "vite --port 5173 --strictPort"
+  },
+  "dependencies": {
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/space-grotesk": "^5.3.0",
+    "firebase": "^12.19.0",
+    "lucide-preact": "^1.48.0",
+    "preact": "^10.29.8"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.6",
+    "@resvg/resvg-js": "^2.6.2",
+    "@types/chrome": "^0.3.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1",
+    "vitest": "^4.1.11"
+  }
+}

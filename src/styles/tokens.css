@@ -1,0 +1,22 @@
+/* Kortex theme (Figma: Theme page, color/* variables and typography). */
+:root {
+  --void: #0b0e14;
+  --panel: #141a26;
+  --edge: #242e42;
+  --ink: #e9edf5;
+  --muted: #97a1b8;
+  --synapse: #7c8cff;
+  --synapse-50: rgba(124, 140, 255, 0.5);
+  --synapse-dim: #232a52;
+  --amber: #efb358;
+  --amber-8: rgba(239, 179, 88, 0.08);
+  --amber-40: rgba(239, 179, 88, 0.4);
+  --alarm: #ff7182;
+  --thumb: #3a4a6b;
+  --thumb-icon: #afc0e6;
+
+  --font-ui: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  color-scheme: dark;
+}
