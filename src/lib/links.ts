@@ -71,10 +71,17 @@ export async function saveLink(
   if (plan.op === 'none') return 'unchanged';
 
   const ref = linkRef(uid, lookup.linkUid);
-  const write = plan.op === 'set' ? setDoc(ref, plan.data) : updateDoc(ref, plan.data);
-  write.catch((e) => console.warn('Kortex: write failed', e));
+  return ackOrQueue(plan.op === 'set' ? setDoc(ref, plan.data) : updateDoc(ref, plan.data));
+}
 
-  if (!navigator.onLine) return 'queued';
+/**
+ * 'acked' when Firestore confirms the write within ~2s, 'queued' when offline or
+ * unconfirmed (it stays in the IndexedDB cache and uploads later). Rejects if
+ * Firestore refuses the write within that window.
+ */
+export function ackOrQueue(write: Promise<void>): Promise<'acked' | 'queued'> {
+  write.catch((e) => console.warn('Kortex: write failed', e));
+  if (!navigator.onLine) return Promise.resolve('queued');
   return Promise.race([
     write.then(() => 'acked' as const),
     new Promise<'queued'>((resolve) => setTimeout(() => resolve('queued'), ACK_TIMEOUT_MS)),

@@ -4,6 +4,8 @@ import { cleanTags, formatAge, sortTags } from '../lib/linkDoc';
 import { normalizeInput } from '../lib/linkKey';
 import { lookupLink, saveLink, type LinkLookup, type SaveOutcome } from '../lib/links';
 import { fetchPageMeta, readTabImage } from '../lib/meta';
+import type { Topic } from '../lib/topicDoc';
+import { addLinkToTopic, topicsHoldingLink, type TopicTarget } from '../lib/topics';
 import {
   Footnote,
   LinkField,
@@ -13,6 +15,8 @@ import {
   PrimaryButton,
   TagChips,
   TonalButton,
+  TopicChips,
+  type TopicPick,
 } from './components';
 
 export interface TabInfo {
@@ -37,6 +41,8 @@ export interface SavedLink {
   /** True when the link already existed and only its tags changed. */
   updated: boolean;
   outcome: SaveOutcome;
+  /** The topic it was added to, if one was picked. */
+  topic?: Topic;
 }
 
 interface Meta {
@@ -62,6 +68,8 @@ export function Compose(props: {
   uid: string;
   init: ComposeInit;
   allTags: string[];
+  /** Most recent first. */
+  topics: Topic[];
   onSaved: (saved: SavedLink) => void;
 }) {
   const { uid, init } = props;
@@ -77,6 +85,10 @@ export function Compose(props: {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [addedTags, setAddedTags] = useState<string[]>([]);
   const [tagEditing, setTagEditing] = useState(false);
+  const [topicPick, setTopicPick] = useState<TopicPick>({ kind: 'none' });
+  const [topicEditing, setTopicEditing] = useState(false);
+  /** Topics that already hold the link, when it's already in Links. */
+  const [inTopics, setInTopics] = useState<{ linkUid: string; uids: string[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -151,6 +163,17 @@ export function Compose(props: {
 
   const active = lookup && lookup.url === link?.trim() && lookup.existing.state === 'active' ? lookup.existing.doc : null;
 
+  // An already-saved link may sit in topics already; one query says which.
+  const activeUid = active && lookup ? lookup.linkUid : null;
+  useEffect(() => {
+    if (!activeUid) return;
+    let live = true;
+    topicsHoldingLink(uid, activeUid).then((uids) => live && setInTopics({ linkUid: activeUid, uids }));
+    return () => void (live = false);
+  }, [activeUid]);
+  const holding = activeUid && inTopics?.linkUid === activeUid ? inTopics.uids : [];
+  const holdingNames = props.topics.filter((t) => holding.includes(t.uid)).map((t) => t.name);
+
   const shownTags = useMemo(() => {
     const base = sortTags(uniqueByCase([...props.allTags, ...(active?.tags ?? [])]));
     const lower = new Set(base.map((t) => t.toLowerCase()));
@@ -196,8 +219,24 @@ export function Compose(props: {
           imageUrl = await Promise.race([tabImage.current, new Promise<null>((r) => setTimeout(() => r(null), 800))]);
         }
       }
-      const outcome = await saveLink(uid, l, { title, imageUrl, tags });
-      props.onSaved({ url: l.url, linkUid: l.linkUid, title, imageUrl, tags, updated: !!existing, outcome });
+      let outcome = await saveLink(uid, l, { title, imageUrl, tags });
+      let topic: Topic | undefined;
+      const picked = topicPick.kind === 'existing' ? props.topics.find((t) => t.uid === topicPick.uid) : undefined;
+      const target: TopicTarget | null =
+        topicPick.kind === 'new'
+          ? { kind: 'new', name: topicPick.name }
+          : picked && !holding.includes(picked.uid)
+            ? { kind: 'existing', topic: picked }
+            : null;
+      if (target) {
+        const added = await addLinkToTopic(uid, { linkUid: l.linkUid, url: l.url }, target);
+        topic = added.topic;
+        if (added.outcome === 'queued') outcome = 'queued';
+        else if (outcome === 'unchanged') outcome = 'acked';
+      } else if (picked) {
+        topic = picked; // the topic already holds it: nothing to write
+      }
+      props.onSaved({ url: l.url, linkUid: l.linkUid, title, imageUrl, tags, updated: !!existing, outcome, topic });
     } catch (e) {
       console.error('Kortex: save failed', e);
       setError(e instanceof Error && /permission/i.test(e.message) ? 'Kortex couldn’t write to your account. Try signing in again.' : 'Couldn’t save this link. Try again.');
@@ -212,13 +251,13 @@ export function Compose(props: {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Enter' || e.isComposing || e.defaultPrevented) return;
       if (e.target instanceof HTMLButtonElement) return; // let a focused button click
-      if (tagEditing) return;
+      if (tagEditing || topicEditing) return;
       e.preventDefault();
       void saveRef.current();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [tagEditing]);
+  }, [tagEditing, topicEditing]);
 
   const paste = async () => {
     try {
@@ -285,8 +324,16 @@ export function Compose(props: {
             onEditingChange={setTagEditing}
           />
 
+          <TopicChips
+            topics={props.topics}
+            pick={topicPick}
+            onPick={setTopicPick}
+            onEditingChange={setTopicEditing}
+            hint={holdingNames.length ? `Already in ${holdingNames.join(', ')}.` : undefined}
+          />
+
           {active ? (
-            <TonalButton label="Update tags" busy={busy} onClick={save} />
+            <TonalButton label={topicPick.kind === 'none' ? 'Update tags' : 'Update'} busy={busy} onClick={save} />
           ) : (
             <PrimaryButton label="Save to Links" busy={busy} onClick={save} />
           )}

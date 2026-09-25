@@ -2,6 +2,7 @@ import type { ComponentChildren, Ref } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Check, Clipboard, CornerDownLeft, Image, LogOut, Plus, X } from 'lucide-preact';
 import { displayDomain } from '../lib/linkKey';
+import { cleanTopicName, findTopicByName } from '../lib/topicDoc';
 
 /** Node-graph "K" on Void: the Android launcher foreground, cropped to its visible 72×72. */
 export function AppIcon({ size }: { size: number }) {
@@ -241,6 +242,108 @@ export function TagChips(props: {
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+/** The save screen's topic pick: nothing, one of the user's topics, or a new one by name. */
+export type TopicPick = { kind: 'none' } | { kind: 'existing'; uid: string } | { kind: 'new'; name: string };
+
+/**
+ * One topic at most, as in the app's quick capture (Figma 171:73): chips most
+ * recent first, the chosen one marked with a trailing tick, and "+ New topic"
+ * opening an inline name field. Picking the chosen chip again clears the pick.
+ */
+export function TopicChips(props: {
+  topics: { uid: string; name: string }[];
+  pick: TopicPick;
+  onPick: (pick: TopicPick) => void;
+  onEditingChange: (editing: boolean) => void;
+  /** Under the chips, e.g. which topics already hold the link. */
+  hint?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const closing = useRef(false);
+
+  useEffect(() => {
+    props.onEditingChange(editing);
+    if (editing) {
+      closing.current = false;
+      inputRef.current?.focus();
+    }
+  }, [editing]);
+
+  // Enter/Esc and the blur that follows can both land here; only the first counts.
+  const finish = (keep: boolean) => {
+    if (closing.current) return;
+    closing.current = true;
+    const name = cleanTopicName(inputRef.current?.value ?? '');
+    if (keep && name) {
+      // Names are unique ignoring case: typing one that exists picks it.
+      const existing = findTopicByName(props.topics, name);
+      props.onPick(existing ? { kind: 'existing', uid: existing.uid } : { kind: 'new', name });
+    }
+    setEditing(false);
+  };
+
+  const pendingNew = props.pick.kind === 'new' ? props.pick.name : null;
+
+  return (
+    <div class="tags-block">
+      <Label>Topic</Label>
+      <div class="chips" role="radiogroup" aria-label="Topic">
+        {props.topics.map((topic) => {
+          const on = props.pick.kind === 'existing' && props.pick.uid === topic.uid;
+          return (
+            <button
+              key={topic.uid}
+              class={`chip topic${on ? ' selected' : ''}`}
+              role="radio"
+              aria-checked={on}
+              onClick={() => props.onPick(on ? { kind: 'none' } : { kind: 'existing', uid: topic.uid })}
+            >
+              {topic.name}
+              {on && ' ✓'}
+            </button>
+          );
+        })}
+        {pendingNew !== null && !editing && (
+          <button class="chip topic selected" role="radio" aria-checked="true" onClick={() => props.onPick({ kind: 'none' })}>
+            {pendingNew} ✓
+          </button>
+        )}
+        {editing ? (
+          <label class="chip topic-new">
+            <input
+              ref={inputRef}
+              placeholder="New topic name"
+              aria-label="New topic name"
+              maxLength={80}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  finish(true);
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  finish(false);
+                }
+              }}
+              onBlur={() => finish(true)}
+            />
+          </label>
+        ) : (
+          pendingNew === null && (
+            <button class="chip new" onClick={() => setEditing(true)}>
+              <Plus size={12} />
+              New topic
+            </button>
+          )
+        )}
+      </div>
+      {props.hint && <div class="chips-hint">{props.hint}</div>}
     </div>
   );
 }

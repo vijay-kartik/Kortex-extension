@@ -1,8 +1,9 @@
 import { GoogleAuthProvider, signInWithCredential, signOut as firebaseSignOut, type User } from 'firebase/auth/web-extension';
 import { getAuth } from './firebase';
 import type { GoogleTokens } from './googleOAuth';
+import { clearLibraryCache } from './library';
 import type { SignInResponse, WorkerRequest } from './messages';
-import { clearTagCache } from './tags';
+import { clearTopicCache } from './topics';
 
 /**
  * Google sign-in, then into the same Firebase project as the app, so links land
@@ -24,5 +25,6 @@ export async function signInWithTokens({ idToken, accessToken }: GoogleTokens): 
 
 export async function signOut(): Promise<void> {
   await firebaseSignOut(getAuth());
-  await clearTagCache();
+  await clearLibraryCache();
+  await clearTopicCache();
 }

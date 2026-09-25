@@ -10,7 +10,7 @@ Designs: Figma `8CBjHcKRkTl4AroVOQlhL4`, page *Browser Extension — Mockups*, b
 
 ```bash
 npm install
-npm test            # linkUrlKey / linkUid vectors, write rules, tags, age format
+npm test            # linkUrlKey / linkUid vectors, write rules, tags, search, age format
 npm run build       # typecheck + build into dist/
 npm run dev         # rebuild dist/ on change (development mode, with sourcemaps)
 npm run preview:ui  # design QA gallery of every popup screen: http://localhost:5173/preview/
@@ -44,14 +44,16 @@ Load it in Chrome: `chrome://extensions` → Developer mode → **Load unpacked*
 src/
   manifest.ts          Manifest V3, generated at build time (client id and key come from .env)
   config.ts            Firebase config and timeouts
-  popup/               app.tsx (screens 01, 03, 08), compose.tsx (02, 04–07), components.tsx, popup.css
+  popup/               app.tsx (screens 01, 03, 08), home.tsx (09 saved links), compose.tsx (02, 04–07), components.tsx, popup.css
   background/index.ts  service worker: context menu, badge, retrying queued writes. No Firebase here.
   offscreen/main.ts    Firestore + DOMParser for the worker: right-click saves, uploading queued writes
   lib/
     linkKey.ts         linkUrlKey + linkUid (must match the app; see the tests)
     linkDoc.ts         doc shape and write rules (pure)
     links.ts           lookup (1 read) and save (1 write) against Firestore
-    tags.ts            tag list with an incremental chrome.storage.local cache
+    library.ts         index of saved links (list, search, tags), cached in chrome.storage.local and refreshed incrementally
+    topicDoc.ts        topic and topic-item doc shapes, per the app's cloud sync plan (pure)
+    topics.ts          topic list (cached like library.ts) and adding a saved link to a topic
     googleOAuth.ts     Google OAuth via launchWebAuthFlow (runs in the worker)
     auth.ts            Google tokens → Firebase Auth (web-extension build)
     meta.ts            title and og:image from a tab or a fetched page

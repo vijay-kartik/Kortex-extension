@@ -3,10 +3,12 @@ import type { User } from 'firebase/auth/web-extension';
 import { WifiOff } from 'lucide-preact';
 import { signIn, signOut } from '../lib/auth';
 import { currentUser } from '../lib/firebase';
-import { sortTags, taggedSentence } from '../lib/linkDoc';
-import { isSavableUrl } from '../lib/linkKey';
+import { cachedLibrary, noteSaved, refreshLibrary, type Library } from '../lib/library';
+import { taggedSentence } from '../lib/linkDoc';
+import { isSavableUrl, linkUid, linkUrlKey } from '../lib/linkKey';
 import { PREFILL_KEY, type WorkerRequest } from '../lib/messages';
-import { cachedTags, noteSavedTags, refreshTags } from '../lib/tags';
+import { recentFirst, type Topic } from '../lib/topicDoc';
+import { cachedTopics, refreshTopics } from '../lib/topics';
 import {
   AppIcon,
   Footnote,
@@ -18,11 +20,15 @@ import {
   TonalButton,
   type Account,
 } from './components';
-import { Compose, type ComposeInit, type SavedLink } from './compose';
+import { Compose, type ComposeInit, type SavedLink, type TabInfo } from './compose';
+import { Home } from './home';
+
+type HomeTab = TabInfo & { linkUid: string };
 
 type Screen =
   | { kind: 'loading' }
   | { kind: 'signed-out' }
+  | { kind: 'home'; tab: HomeTab | null }
   | { kind: 'compose'; init: ComposeInit; key: number }
   | { kind: 'saved'; saved: SavedLink }
   | { kind: 'offline'; saved: SavedLink };
@@ -34,48 +40,59 @@ function accountOf(user: User): Account {
   return { email: user.email, initial: name.trim().charAt(0).toUpperCase() || '?' };
 }
 
-async function activeTabInit(prefill: string | null): Promise<ComposeInit> {
-  if (prefill) return { kind: 'prefill', url: prefill };
+async function activeTab(): Promise<TabInfo | null> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tab?.id !== undefined && tab.url && isSavableUrl(tab.url)) {
-    return { kind: 'tab', tab: { id: tab.id, url: tab.url, title: tab.title ?? '' } };
-  }
-  return { kind: 'cant-save' };
-}
-
-function mergeTags(all: string[], added: string[]): string[] {
-  const lower = new Set(all.map((t) => t.toLowerCase()));
-  return sortTags([...all, ...added.filter((t) => !lower.has(t.toLowerCase()))]);
+  if (tab?.id !== undefined && tab.url && isSavableUrl(tab.url)) return { id: tab.id, url: tab.url, title: tab.title ?? '' };
+  return null;
 }
 
 export function App() {
   const [user, setUser] = useState<User | null>(null);
   const [screen, setScreen] = useState<Screen>({ kind: 'loading' });
-  const [allTags, setAllTags] = useState<string[]>([]);
-  const prefill = useRef<string | null>(null);
+  const [library, setLibrary] = useState<Library | null>(null);
+  const [topics, setTopics] = useState<Topic[]>([]);
   const composeKey = useRef(0);
 
-  const openCompose = async (init?: ComposeInit) => {
-    const next = init ?? (await activeTabInit(prefill.current));
-    prefill.current = null;
-    setScreen({ kind: 'compose', init: next, key: ++composeKey.current });
+  const openCompose = (init: ComposeInit) => setScreen({ kind: 'compose', init, key: ++composeKey.current });
+
+  const openHome = async () => {
+    const tab = await activeTab();
+    setScreen({ kind: 'home', tab: tab && { ...tab, linkUid: await linkUid(linkUrlKey(tab.url)) } });
   };
 
-  const loadTags = async (uid: string) => {
-    setAllTags(await cachedTags(uid));
+  /** Right-click fallback goes straight to the save screen; otherwise the saved-links home. */
+  const openStart = async (prefill: string | null) => {
+    if (prefill) openCompose({ kind: 'prefill', url: prefill });
+    else await openHome();
+  };
+
+  const loadLibrary = async (uid: string) => {
+    const cached = await cachedLibrary(uid);
+    if (cached) setLibrary(cached);
     try {
-      setAllTags(await refreshTags(uid));
+      setLibrary(await refreshLibrary(uid));
     } catch (e) {
-      console.warn('Kortex: tag refresh failed', e);
+      console.warn('Kortex: library refresh failed', e);
+      setLibrary(cached ?? { links: [], tags: [] });
+    }
+  };
+
+  const loadTopics = async (uid: string) => {
+    setTopics(await cachedTopics(uid));
+    try {
+      setTopics(await refreshTopics(uid));
+    } catch (e) {
+      console.warn('Kortex: topic refresh failed', e);
     }
   };
 
   useEffect(() => {
     void chrome.action.setBadgeText({ text: '' });
     (async () => {
+      let prefill: string | null = null;
       const session = await chrome.storage.session.get(PREFILL_KEY);
       if (typeof session[PREFILL_KEY] === 'string') {
-        prefill.current = session[PREFILL_KEY];
+        prefill = session[PREFILL_KEY];
         await chrome.storage.session.remove(PREFILL_KEY);
       }
       const u = await currentUser();
@@ -84,8 +101,9 @@ export function App() {
         setScreen({ kind: 'signed-out' });
         return;
       }
-      void loadTags(u.uid);
-      await openCompose();
+      void loadLibrary(u.uid);
+      void loadTopics(u.uid);
+      await openStart(prefill);
     })();
 
     const onKey = (e: KeyboardEvent) => {
@@ -97,33 +115,50 @@ export function App() {
 
   const onSignedIn = async (u: User) => {
     setUser(u);
-    void loadTags(u.uid);
-    await openCompose();
+    void loadLibrary(u.uid);
+    void loadTopics(u.uid);
+    await openHome();
   };
 
   const onSignOut = async () => {
     await signOut();
     setUser(null);
-    setAllTags([]);
+    setLibrary(null);
+    setTopics([]);
     setScreen({ kind: 'signed-out' });
   };
 
   const onSaved = (saved: SavedLink) => {
-    if (user) void noteSavedTags(user.uid, saved.linkUid, saved.tags);
-    setAllTags((all) => mergeTags(all, saved.tags));
+    if (user) {
+      const link = { id: saved.linkUid, url: saved.url, title: saved.title, tags: saved.tags, createdAt: Date.now() };
+      void noteSaved(user.uid, link).then(setLibrary);
+    }
+    const topic = saved.topic;
+    // A topic the link went into moves to the front, as it does in the app.
+    if (topic) setTopics((all) => recentFirst([...all.filter((t) => t.uid !== topic.uid), topic]));
     const message: WorkerRequest = { target: 'worker', type: saved.outcome === 'queued' ? 'queued' : 'saved' };
     void chrome.runtime.sendMessage(message).catch(() => {});
     setScreen(saved.outcome === 'queued' ? { kind: 'offline', saved } : { kind: 'saved', saved });
   };
 
-  const saveAnother = () => void openCompose({ kind: 'blank' });
+  const saveAnother = () => openCompose({ kind: 'blank' });
 
   return (
     <>
       <Header account={user ? accountOf(user) : undefined} onSignOut={onSignOut} />
       {screen.kind === 'signed-out' && <SignedOut onSignedIn={onSignedIn} />}
+      {screen.kind === 'home' && (
+        <Home
+          tab={screen.tab}
+          links={library?.links ?? null}
+          now={Date.now()}
+          onSaveTab={() => screen.tab && openCompose({ kind: 'tab', tab: screen.tab })}
+          onSaveUrl={(url) => openCompose({ kind: 'prefill', url })}
+          onOpen={(link) => void chrome.tabs.create({ url: link.url })}
+        />
+      )}
       {screen.kind === 'compose' && user && (
-        <Compose key={screen.key} uid={user.uid} init={screen.init} allTags={allTags} onSaved={onSaved} />
+        <Compose key={screen.key} uid={user.uid} init={screen.init} allTags={library?.tags ?? []} topics={topics} onSaved={onSaved} />
       )}
       {screen.kind === 'saved' && <Saved saved={screen.saved} onAnother={saveAnother} />}
       {screen.kind === 'offline' && <Offline saved={screen.saved} onAnother={saveAnother} />}
@@ -198,7 +233,8 @@ export function Saved({ saved, onAnother }: { saved: SavedLink; onAnother: () =>
         {saved.updated ? 'Tags updated' : 'Saved to Links'}
       </div>
       <div class="lede" style={{ marginTop: 4, width: 280 }}>
-        {taggedSentence(saved.tags)}It’ll show up in Kortex after the app’s next sync.
+        {taggedSentence(saved.tags)}
+        {saved.topic && `Added to ${saved.topic.name}. `}It’ll show up in Kortex after the app’s next sync.
       </div>
       <div style={{ marginTop: 16, width: '100%' }}>
         <PreviewCard url={saved.url} title={saved.title} imageUrl={saved.imageUrl} />
