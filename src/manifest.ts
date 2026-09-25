@@ -1,6 +1,6 @@
 /**
- * Manifest V3, generated at build time so the OAuth client id and the pinned
- * extension key come from `.env` instead of being committed.
+ * Manifest V3, generated at build time so the pinned extension key comes from
+ * `.env` instead of being committed.
  */
 export function buildManifest(env: Record<string, string>, version: string) {
   const manifest: chrome.runtime.ManifestV3 = {
@@ -21,10 +21,6 @@ export function buildManifest(env: Record<string, string>, version: string) {
     host_permissions: ['http://*/*', 'https://*/*'],
     commands: {
       _execute_action: { suggested_key: { default: 'Alt+Shift+K' }, description: 'Open Kortex' },
-    },
-    oauth2: {
-      client_id: env.OAUTH_CLIENT_ID || 'SET_OAUTH_CLIENT_ID_IN_.env.apps.googleusercontent.com',
-      scopes: ['openid', 'email', 'profile'],
     },
   };
   if (env.EXTENSION_KEY) (manifest as unknown as Record<string, unknown>).key = env.EXTENSION_KEY;

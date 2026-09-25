@@ -3,6 +3,7 @@
  * and uploading writes that were queued offline. It stays free of Firebase;
  * anything that needs Firestore or DOMParser runs in the offscreen document.
  */
+import { googleTokens } from '../lib/googleOAuth';
 import { isSavableUrl } from '../lib/linkKey';
 import {
   FLUSH_ALARM,
@@ -11,6 +12,7 @@ import {
   type FlushResponse,
   type OffscreenRequest,
   type SaveLinkResponse,
+  type SignInResponse,
   type WorkerRequest,
 } from '../lib/messages';
 
@@ -142,10 +144,30 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === FLUSH_ALARM) void flush();
 });
 
+// ---- Sign-in ----------------------------------------------------------------
+
+/**
+ * Runs here rather than in the popup, which closes when the Google window takes
+ * focus. The offscreen document signs in to Firebase so the session is saved
+ * even if nobody is left to receive the response.
+ */
+async function signIn(): Promise<SignInResponse> {
+  try {
+    const tokens = await googleTokens();
+    return await withOffscreen(() => toOffscreen<SignInResponse>({ target: 'offscreen', type: 'sign-in', tokens }));
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 // ---- Messages from the popup -------------------------------------------------
 
 chrome.runtime.onMessage.addListener((message: WorkerRequest, _sender, sendResponse) => {
   if (message?.target !== 'worker') return;
+  if (message.type === 'sign-in') {
+    void signIn().then(sendResponse);
+    return true;
+  }
   const done = message.type === 'saved' ? showSavedBadge() : markPending().then(showSavedBadge);
   done.finally(() => sendResponse(true));
   return true;

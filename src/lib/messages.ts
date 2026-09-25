@@ -1,8 +1,11 @@
 /** Messages between the popup, the service worker and the offscreen document. */
 
+import type { GoogleTokens } from './googleOAuth';
+
 export type OffscreenRequest =
   | { target: 'offscreen'; type: 'save-link'; url: string }
-  | { target: 'offscreen'; type: 'flush' };
+  | { target: 'offscreen'; type: 'flush' }
+  | { target: 'offscreen'; type: 'sign-in'; tokens: GoogleTokens };
 
 export type SaveLinkResponse =
   | { ok: true; outcome: 'acked' | 'queued' | 'unchanged' }
@@ -10,7 +13,12 @@ export type SaveLinkResponse =
 
 export type FlushResponse = { ok: boolean };
 
-export type WorkerRequest = { target: 'worker'; type: 'saved' } | { target: 'worker'; type: 'queued' };
+export type SignInResponse = { ok: true; tokens: GoogleTokens } | { ok: false; message: string };
+
+export type WorkerRequest =
+  | { target: 'worker'; type: 'saved' }
+  | { target: 'worker'; type: 'queued' }
+  | { target: 'worker'; type: 'sign-in' };
 
 /** chrome.storage.session key: a link to prefill when the popup next opens. */
 export const PREFILL_KEY = 'prefill';

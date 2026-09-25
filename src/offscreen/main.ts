@@ -1,14 +1,17 @@
 /**
  * Offscreen document: Firestore and DOMParser for the service worker.
- * Handles right-click saves and uploading writes that were queued offline.
+ * Handles right-click saves, uploading writes that were queued offline, and
+ * finishing sign-in for the worker.
  * It shares the popup's Firebase session through the extension's IndexedDB.
  */
 import { waitForPendingWrites } from 'firebase/firestore';
+import { signInWithTokens } from '../lib/auth';
 import { currentUser, getDb } from '../lib/firebase';
+import type { GoogleTokens } from '../lib/googleOAuth';
 import { lookupLink, saveLink } from '../lib/links';
 import { fetchPageMeta } from '../lib/meta';
 import { isSavableUrl } from '../lib/linkKey';
-import type { FlushResponse, OffscreenRequest, SaveLinkResponse } from '../lib/messages';
+import type { FlushResponse, OffscreenRequest, SaveLinkResponse, SignInResponse } from '../lib/messages';
 
 const FLUSH_TIMEOUT_MS = 20_000;
 
@@ -48,9 +51,23 @@ async function flushQueued(): Promise<FlushResponse> {
   }
 }
 
+async function signIn(tokens: GoogleTokens): Promise<SignInResponse> {
+  try {
+    await signInWithTokens(tokens);
+    return { ok: true, tokens };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 chrome.runtime.onMessage.addListener((message: OffscreenRequest, _sender, sendResponse) => {
   if (message?.target !== 'offscreen') return;
-  const work = message.type === 'save-link' ? saveRightClicked(message.url) : flushQueued();
+  const work: Promise<unknown> =
+    message.type === 'save-link'
+      ? saveRightClicked(message.url)
+      : message.type === 'sign-in'
+        ? signIn(message.tokens)
+        : flushQueued();
   work.then(sendResponse);
   return true;
 });

@@ -31,8 +31,10 @@ Load it in Chrome: `chrome://extensions` → Developer mode → **Load unpacked*
    openssl rsa -in key.pem -pubout -outform DER | base64 | tr -d '\n'
    ```
    Build, load unpacked, and note the extension id Chrome shows. It stays the same across reloads. Keep `key.pem` out of git.
-3. **OAuth client.** Google Cloud console (project `kortex-a24b7`) → APIs & Services → Credentials → Create OAuth client ID →
-   *Chrome extension*, with the id from step 2. Put the client id in `OAUTH_CLIENT_ID` and rebuild.
+3. **OAuth client.** Google Cloud console (project `kortex-a24b7`) → APIs & Services → Credentials → OAuth client ID of
+   type *Web application* (the "Web client (auto created by Google Service)" works). Add the authorized redirect URI
+   `https://<id from step 2>.chromiumapp.org/`, put the client id in `VITE_GOOGLE_WEB_CLIENT_ID` and rebuild. Sign-in
+   uses `launchWebAuthFlow`, so it works in any Chromium browser, signed in to Google or not.
 4. Google sign-in is already enabled in Firebase Auth. If the OAuth consent screen is in *Testing*, add your account as a
    test user.
 
@@ -50,7 +52,8 @@ src/
     linkDoc.ts         doc shape and write rules (pure)
     links.ts           lookup (1 read) and save (1 write) against Firestore
     tags.ts            tag list with an incremental chrome.storage.local cache
-    auth.ts            chrome.identity → Firebase Auth (web-extension build)
+    googleOAuth.ts     Google OAuth via launchWebAuthFlow (runs in the worker)
+    auth.ts            Google tokens → Firebase Auth (web-extension build)
     meta.ts            title and og:image from a tab or a fetched page
   preview/             dev-only design QA gallery (not in the extension build)
   styles/tokens.css    Theme colours and fonts
